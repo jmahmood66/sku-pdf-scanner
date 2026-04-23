@@ -1,0 +1,124 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SKU PDF Scanner</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background: #f4f4f4;
+}
+
+#controls {
+    margin: 15px;
+}
+
+#skuInput {
+    padding: 10px;
+    font-size: 18px;
+    width: 300px;
+}
+
+#pdfCanvas {
+    border: 1px solid #333;
+    margin-top: 10px;
+    max-width: 95%;
+}
+
+#status {
+    margin-top: 10px;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Scan SKU to Find Page</h2>
+
+<div id="controls">
+    <input type="text" id="skuInput" placeholder="Scan SKU here" autofocus>
+    <button onclick="searchPDF()">Search</button>
+</div>
+
+<div id="status">Loading PDF...</div>
+
+<canvas id="pdfCanvas"></canvas>
+
+<script>
+const url = 'Logo Reference Book.pdf';
+
+let pdfDoc = null;
+let currentPage = 1;
+let isSearching = false;
+
+// Load PDF
+pdfjsLib.getDocument(url).promise.then(pdf => {
+    pdfDoc = pdf;
+    document.getElementById('status').innerText = "PDF Loaded. Ready to scan.";
+    renderPage(currentPage);
+}).catch(err => {
+    document.getElementById('status').innerText = "Error loading PDF.";
+    console.error(err);
+});
+
+// Render page
+function renderPage(num) {
+    pdfDoc.getPage(num).then(page => {
+        const canvas = document.getElementById('pdfCanvas');
+        const ctx = canvas.getContext('2d');
+        const viewport = page.getViewport({ scale: 1.5 });
+
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        page.render({
+            canvasContext: ctx,
+            viewport: viewport
+        });
+
+        document.getElementById('status').innerText = "Viewing page " + num;
+    });
+}
+
+// Search function
+async function searchPDF() {
+    const input = document.getElementById('skuInput');
+    const sku = input.value.trim().replace(/\s+/g, '');
+
+    document.getElementById('status').innerText = "Searching for: " + sku;
+
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const content = await page.getTextContent();
+
+        let text = content.items.map(item => item.str).join('');
+
+        // normalize BOTH sides (critical fix)
+        text = text.replace(/\s+/g, '');
+
+        if (text.includes(sku)) {
+            renderPage(i);
+            document.getElementById('status').innerText = "Found on page " + i;
+            return;
+        }
+    }
+
+    document.getElementById('status').innerText = "SKU not found.";
+}
+
+// Trigger search when scanner presses Enter
+document.getElementById('skuInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        searchPDF();
+    }
+});
+</script>
+
+</body>
+</html>
