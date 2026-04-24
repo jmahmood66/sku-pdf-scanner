@@ -16,7 +16,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 html, body {
     height: 100%;
     margin: 0;
-    overflow: hidden; /* removes page scroll */
+    overflow: hidden;
     font-family: Arial, sans-serif;
     background: #f4f4f4;
     text-align: center;
@@ -77,56 +77,86 @@ const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
 let currentPage = 1;
+let currentHighlights = [];
 
-// Load PDF
+/* ---------------- LOAD PDF ---------------- */
 pdfjsLib.getDocument(url).promise.then(pdf => {
     pdfDoc = pdf;
     document.getElementById('status').innerText = "PDF Loaded. Ready to scan.";
-    renderPage(currentPage);
-}).catch(err => {
-    document.getElementById('status').innerText = "Error loading PDF.";
-    console.error(err);
+    renderPage(1);
 });
 
-// Render page (FULL FIT: width + height)
-function renderPage(num) {
-    pdfDoc.getPage(num).then(page => {
-        const canvas = document.getElementById('pdfCanvas');
-        const ctx = canvas.getContext('2d');
+/* ---------------- RENDER PAGE ---------------- */
+async function renderPage(num, searchTerm = null) {
+    const page = await pdfDoc.getPage(num);
 
-        const viewport = page.getViewport({ scale: 1 });
+    const canvas = document.getElementById('pdfCanvas');
+    const ctx = canvas.getContext('2d');
 
-        const containerWidth = window.innerWidth * 0.95;
-        const containerHeight = window.innerHeight * 0.75;
+    const viewport = page.getViewport({ scale: 1 });
 
-        const scaleW = containerWidth / viewport.width;
-        const scaleH = containerHeight / viewport.height;
+    const containerWidth = window.innerWidth * 0.95;
+    const containerHeight = window.innerHeight * 0.75;
 
-        const scale = Math.min(scaleW, scaleH);
+    const scaleW = containerWidth / viewport.width;
+    const scaleH = containerHeight / viewport.height;
 
-        const scaledViewport = page.getViewport({ scale });
+    const scale = Math.min(scaleW, scaleH);
 
-        canvas.width = scaledViewport.width;
-        canvas.height = scaledViewport.height;
+    const scaledViewport = page.getViewport({ scale });
 
-        canvas.style.width = scaledViewport.width + "px";
-        canvas.style.height = scaledViewport.height + "px";
+    canvas.width = scaledViewport.width;
+    canvas.height = scaledViewport.height;
 
-        page.render({
-            canvasContext: ctx,
-            viewport: scaledViewport
+    canvas.style.width = scaledViewport.width + "px";
+    canvas.style.height = scaledViewport.height + "px";
+
+    await page.render({
+        canvasContext: ctx,
+        viewport: scaledViewport
+    }).promise;
+
+    // CLEAR OLD HIGHLIGHTS
+    currentHighlights = [];
+
+    if (searchTerm) {
+        const textContent = await page.getTextContent();
+
+        const normSearch = searchTerm.replace(/\s+/g, '');
+
+        textContent.items.forEach(item => {
+            const text = item.str.replace(/\s+/g, '');
+
+            if (text.includes(normSearch)) {
+                const transform = pdfjsLib.Util.transform(
+                    scaledViewport.transform,
+                    item.transform
+                );
+
+                const x = transform[4];
+                const y = transform[5];
+
+                const width = item.width * scale;
+                const height = item.height * scale;
+
+                ctx.fillStyle = "rgba(255, 255, 0, 0.4)";
+                ctx.fillRect(x, y - height, width, height);
+
+                currentHighlights.push({ x, y, width, height });
+            }
         });
+    }
 
-        document.getElementById('status').innerText = "Viewing page " + num;
-    });
+    document.getElementById('status').innerText = "Viewing page " + num;
+    currentPage = num;
 }
 
-// Search function
+/* ---------------- SEARCH ---------------- */
 async function searchPDF() {
     const input = document.getElementById('skuInput');
     const sku = input.value.trim().replace(/\s+/g, '');
 
-    document.getElementById('status').innerText = "Searching for: " + sku;
+    document.getElementById('status').innerText = "Searching...";
 
     for (let i = 1; i <= pdfDoc.numPages; i++) {
         const page = await pdfDoc.getPage(i);
@@ -136,7 +166,8 @@ async function searchPDF() {
         text = text.replace(/\s+/g, '');
 
         if (text.includes(sku)) {
-            renderPage(i);
+            await renderPage(i, sku);
+            scrollToHighlight();
             document.getElementById('status').innerText = "Found on page " + i;
             return;
         }
@@ -145,7 +176,27 @@ async function searchPDF() {
     document.getElementById('status').innerText = "SKU not found.";
 }
 
-// Enter key triggers search
+/* ---------------- SCROLL TO FIRST HIGHLIGHT ---------------- */
+function scrollToHighlight() {
+    const viewer = document.getElementById('viewer');
+
+    if (currentHighlights.length > 0) {
+        const first = currentHighlights[0];
+        viewer.scrollTo({
+            top: first.y - 100,
+            behavior: "smooth"
+        });
+    }
+}
+
+/* ---------------- ENTER TRIGGERS SEARCH ---------------- */
+document.getElementById('skuInput').addEventListener('input', function () {
+    const value = this.value.trim();
+    if (value.length >= 3) {
+        searchPDF(); // instant typeahead
+    }
+});
+
 document.getElementById('skuInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         searchPDF();
