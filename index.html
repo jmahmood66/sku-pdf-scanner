@@ -22,13 +22,9 @@ html, body {
     text-align: center;
 }
 
-h2 {
-    margin: 10px 0;
-}
+h2 { margin: 10px 0; }
 
-#controls {
-    margin: 10px;
-}
+#controls { margin: 10px; }
 
 #skuInput {
     padding: 10px;
@@ -116,35 +112,59 @@ async function renderPage(num, searchTerm = null) {
         viewport: scaledViewport
     }).promise;
 
-    // CLEAR OLD HIGHLIGHTS
+    // RESET HIGHLIGHTS
     currentHighlights = [];
 
+    /* ---------------- FIXED HIGHLIGHT LOGIC ---------------- */
     if (searchTerm) {
-        const textContent = await page.getTextContent();
 
+        const textContent = await page.getTextContent();
         const normSearch = searchTerm.replace(/\s+/g, '');
 
-        textContent.items.forEach(item => {
-            const text = item.str.replace(/\s+/g, '');
+        let fullText = '';
+        let map = [];
 
-            if (text.includes(normSearch)) {
-                const transform = pdfjsLib.Util.transform(
+        // rebuild full string with position map
+        textContent.items.forEach(item => {
+            const str = item.str;
+            const cleaned = str.replace(/\s+/g, '');
+
+            for (let i = 0; i < cleaned.length; i++) {
+                map.push({
+                    char: cleaned[i],
+                    item: item
+                });
+                fullText += cleaned[i];
+            }
+        });
+
+        // find match
+        let index = fullText.indexOf(normSearch);
+
+        while (index !== -1) {
+
+            for (let i = index; i < index + normSearch.length; i++) {
+                const item = map[i].item;
+
+                const tx = pdfjsLib.Util.transform(
                     scaledViewport.transform,
                     item.transform
                 );
 
-                const x = transform[4];
-                const y = transform[5];
+                const x = tx[4];
+                const y = tx[5];
 
                 const width = item.width * scale;
                 const height = item.height * scale;
 
-                ctx.fillStyle = "rgba(255, 255, 0, 0.4)";
+                ctx.fillStyle = "rgba(255, 255, 0, 0.35)";
                 ctx.fillRect(x, y - height, width, height);
 
-                currentHighlights.push({ x, y, width, height });
+                currentHighlights.push({ x, y });
             }
-        });
+
+            index = fullText.indexOf(normSearch, index + 1);
+        }
     }
 
     document.getElementById('status').innerText = "Viewing page " + num;
@@ -167,7 +187,6 @@ async function searchPDF() {
 
         if (text.includes(sku)) {
             await renderPage(i, sku);
-            scrollToHighlight();
             document.getElementById('status').innerText = "Found on page " + i;
             return;
         }
@@ -176,24 +195,11 @@ async function searchPDF() {
     document.getElementById('status').innerText = "SKU not found.";
 }
 
-/* ---------------- SCROLL TO FIRST HIGHLIGHT ---------------- */
-function scrollToHighlight() {
-    const viewer = document.getElementById('viewer');
-
-    if (currentHighlights.length > 0) {
-        const first = currentHighlights[0];
-        viewer.scrollTo({
-            top: first.y - 100,
-            behavior: "smooth"
-        });
-    }
-}
-
-/* ---------------- ENTER TRIGGERS SEARCH ---------------- */
+/* ---------------- ENTER / TYPE SEARCH ---------------- */
 document.getElementById('skuInput').addEventListener('input', function () {
     const value = this.value.trim();
     if (value.length >= 3) {
-        searchPDF(); // instant typeahead
+        searchPDF();
     }
 });
 
