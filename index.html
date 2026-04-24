@@ -72,7 +72,12 @@ h2 { margin: 10px 0; }
 const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
-let skuIndex = {};   // 🔥 INSTANT LOOKUP TABLE
+let skuIndex = {};
+
+/* ---------------- NORMALIZER (IMPORTANT FIX) ---------------- */
+function normalize(text) {
+    return text.replace(/[\s\-]+/g, ''); // removes spaces + dashes
+}
 
 /* ---------------- LOAD + BUILD INDEX ---------------- */
 pdfjsLib.getDocument(url).promise.then(async pdf => {
@@ -85,10 +90,7 @@ pdfjsLib.getDocument(url).promise.then(async pdf => {
         const content = await page.getTextContent();
 
         let text = content.items.map(item => item.str).join('');
-        text = text.replace(/\s+/g, '');
-
-        // Store full page text (fast lookup later)
-        skuIndex[i] = text;
+        skuIndex[i] = normalize(text); // ✅ consistent normalization
     }
 
     document.getElementById('status').innerText = "Ready to scan.";
@@ -122,15 +124,32 @@ async function renderPage(num, highlight = null) {
         viewport: scaledViewport
     }).promise;
 
-    // Simple highlight (fast version)
+    /* ---------------- FIXED HIGHLIGHT (DASH SAFE) ---------------- */
     if (highlight) {
+
         const textContent = await page.getTextContent();
-        const norm = highlight.replace(/\s+/g, '');
+        const normSearch = normalize(highlight);
 
+        let fullText = '';
+        let map = [];
+
+        // rebuild character map (handles split PDF text like 11- / 1698 / -2)
         textContent.items.forEach(item => {
-            const cleaned = item.str.replace(/\s+/g, '');
+            const cleaned = normalize(item.str);
 
-            if (cleaned.includes(norm)) {
+            for (let i = 0; i < cleaned.length; i++) {
+                map.push({ item });
+                fullText += cleaned[i];
+            }
+        });
+
+        let index = fullText.indexOf(normSearch);
+
+        while (index !== -1) {
+
+            for (let i = index; i < index + normSearch.length; i++) {
+                const item = map[i].item;
+
                 const tx = pdfjsLib.Util.transform(
                     scaledViewport.transform,
                     item.transform
@@ -147,7 +166,9 @@ async function renderPage(num, highlight = null) {
                     item.height * scale
                 );
             }
-        });
+
+            index = fullText.indexOf(normSearch, index + 1);
+        }
     }
 
     document.getElementById('status').innerText = "Viewing page " + num;
@@ -156,17 +177,16 @@ async function renderPage(num, highlight = null) {
 /* ---------------- INSTANT SEARCH ---------------- */
 function searchSKU() {
     const input = document.getElementById('skuInput');
-    const sku = input.value.trim().replace(/\s+/g, '');
+    const sku = normalize(input.value);
 
     if (!sku) return;
 
     document.getElementById('status').innerText = "Searching...";
 
-    // 🔥 INSTANT LOOKUP (no loops through pages)
     for (const page in skuIndex) {
         if (skuIndex[page].includes(sku)) {
 
-            renderPage(parseInt(page), sku);
+            renderPage(parseInt(page), input.value);
 
             document.getElementById('status').innerText =
                 "Found on page " + page;
@@ -182,14 +202,14 @@ function searchSKU() {
     input.focus();
 }
 
-/* ---------------- ENTER HANDLING ---------------- */
+/* ---------------- ENTER ---------------- */
 document.getElementById('skuInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         searchSKU();
     }
 });
 
-/* ---------------- AUTO FOCUS (scanner mode) ---------------- */
+/* ---------------- AUTO FOCUS ---------------- */
 setInterval(() => {
     const input = document.getElementById('skuInput');
     if (document.activeElement !== input) {
