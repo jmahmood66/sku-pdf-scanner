@@ -72,13 +72,14 @@ h2 { margin: 10px 0; }
 const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
-let currentPage = 1;
 let currentHighlights = [];
+let scanLock = false;
 
 /* ---------------- LOAD PDF ---------------- */
 pdfjsLib.getDocument(url).promise.then(pdf => {
     pdfDoc = pdf;
     document.getElementById('status').innerText = "PDF Loaded. Ready to scan.";
+    document.getElementById('skuInput').focus();
     renderPage(1);
 });
 
@@ -112,10 +113,9 @@ async function renderPage(num, searchTerm = null) {
         viewport: scaledViewport
     }).promise;
 
-    // RESET HIGHLIGHTS
     currentHighlights = [];
 
-    /* ---------------- FIXED HIGHLIGHT LOGIC ---------------- */
+    /* ---------------- HIGHLIGHT LOGIC ---------------- */
     if (searchTerm) {
 
         const textContent = await page.getTextContent();
@@ -124,21 +124,15 @@ async function renderPage(num, searchTerm = null) {
         let fullText = '';
         let map = [];
 
-        // rebuild full string with position map
         textContent.items.forEach(item => {
-            const str = item.str;
-            const cleaned = str.replace(/\s+/g, '');
+            const cleaned = item.str.replace(/\s+/g, '');
 
             for (let i = 0; i < cleaned.length; i++) {
-                map.push({
-                    char: cleaned[i],
-                    item: item
-                });
+                map.push({ char: cleaned[i], item });
                 fullText += cleaned[i];
             }
         });
 
-        // find match
         let index = fullText.indexOf(normSearch);
 
         while (index !== -1) {
@@ -168,13 +162,21 @@ async function renderPage(num, searchTerm = null) {
     }
 
     document.getElementById('status').innerText = "Viewing page " + num;
-    currentPage = num;
 }
 
 /* ---------------- SEARCH ---------------- */
 async function searchPDF() {
+
+    if (scanLock) return;
+    scanLock = true;
+
     const input = document.getElementById('skuInput');
     const sku = input.value.trim().replace(/\s+/g, '');
+
+    if (!sku) {
+        scanLock = false;
+        return;
+    }
 
     document.getElementById('status').innerText = "Searching...";
 
@@ -186,28 +188,42 @@ async function searchPDF() {
         text = text.replace(/\s+/g, '');
 
         if (text.includes(sku)) {
+
             await renderPage(i, sku);
+
             document.getElementById('status').innerText = "Found on page " + i;
+
+            // RESET FOR NEXT SCAN
+            input.value = '';
+            input.focus();
+            scanLock = false;
             return;
         }
     }
 
     document.getElementById('status').innerText = "SKU not found.";
+
+    // RESET INPUT EVEN IF NOT FOUND
+    input.value = '';
+    input.focus();
+    scanLock = false;
 }
 
-/* ---------------- ENTER / TYPE SEARCH ---------------- */
-document.getElementById('skuInput').addEventListener('input', function () {
-    const value = this.value.trim();
-    if (value.length >= 3) {
+/* ---------------- ENTER KEY ---------------- */
+document.getElementById('skuInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
         searchPDF();
     }
 });
 
-document.getElementById('skuInput').addEventListener('keypress', function(e) {
-    if (e.key === 'Enter') {
-        searchPDF();
+/* ---------------- AUTO FOCUS (scanner-friendly) ---------------- */
+setInterval(() => {
+    const input = document.getElementById('skuInput');
+    if (document.activeElement !== input) {
+        input.focus();
     }
-});
+}, 1000);
 </script>
 
 </body>
