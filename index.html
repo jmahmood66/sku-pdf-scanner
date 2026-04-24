@@ -77,14 +77,21 @@ function renderPage(num) {
     pdfDoc.getPage(num).then(page => {
         const canvas = document.getElementById('pdfCanvas');
         const ctx = canvas.getContext('2d');
-        const viewport = page.getViewport({ scale: 1.5 });
 
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
+        const viewport = page.getViewport({ scale: 1 });
+
+        // Fit to screen width
+        const containerWidth = window.innerWidth * 0.95;
+        const scale = containerWidth / viewport.width;
+
+        const scaledViewport = page.getViewport({ scale });
+
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
 
         page.render({
             canvasContext: ctx,
-            viewport: viewport
+            viewport: scaledViewport
         });
 
         document.getElementById('status').innerText = "Viewing page " + num;
