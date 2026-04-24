@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SKU PDF Scanner</title>
+<title>SKU PDF Scanner (Instant Index)</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
@@ -55,14 +55,14 @@ h2 { margin: 10px 0; }
 
 <body>
 
-<h2>Scan SKU to Find Page</h2>
+<h2>Instant SKU Scanner</h2>
 
 <div id="controls">
     <input type="text" id="skuInput" placeholder="Scan SKU here" autofocus>
-    <button onclick="searchPDF()">Search</button>
+    <button onclick="searchSKU()">Search</button>
 </div>
 
-<div id="status">Loading PDF...</div>
+<div id="status">Building index...</div>
 
 <div id="viewer">
     <canvas id="pdfCanvas"></canvas>
@@ -72,19 +72,31 @@ h2 { margin: 10px 0; }
 const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
-let currentHighlights = [];
-let scanLock = false;
+let skuIndex = {};   // 🔥 INSTANT LOOKUP TABLE
 
-/* ---------------- LOAD PDF ---------------- */
-pdfjsLib.getDocument(url).promise.then(pdf => {
+/* ---------------- LOAD + BUILD INDEX ---------------- */
+pdfjsLib.getDocument(url).promise.then(async pdf => {
     pdfDoc = pdf;
-    document.getElementById('status').innerText = "PDF Loaded. Ready to scan.";
-    document.getElementById('skuInput').focus();
+
+    document.getElementById('status').innerText = "Indexing PDF...";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+
+        let text = content.items.map(item => item.str).join('');
+        text = text.replace(/\s+/g, '');
+
+        // Store full page text (fast lookup later)
+        skuIndex[i] = text;
+    }
+
+    document.getElementById('status').innerText = "Ready to scan.";
     renderPage(1);
 });
 
 /* ---------------- RENDER PAGE ---------------- */
-async function renderPage(num, searchTerm = null) {
+async function renderPage(num, highlight = null) {
     const page = await pdfDoc.getPage(num);
 
     const canvas = document.getElementById('pdfCanvas');
@@ -92,13 +104,10 @@ async function renderPage(num, searchTerm = null) {
 
     const viewport = page.getViewport({ scale: 1 });
 
-    const containerWidth = window.innerWidth * 0.95;
-    const containerHeight = window.innerHeight * 0.75;
-
-    const scaleW = containerWidth / viewport.width;
-    const scaleH = containerHeight / viewport.height;
-
-    const scale = Math.min(scaleW, scaleH);
+    const scale = Math.min(
+        window.innerWidth * 0.95 / viewport.width,
+        window.innerHeight * 0.75 / viewport.height
+    );
 
     const scaledViewport = page.getViewport({ scale });
 
@@ -113,33 +122,15 @@ async function renderPage(num, searchTerm = null) {
         viewport: scaledViewport
     }).promise;
 
-    currentHighlights = [];
-
-    /* ---------------- HIGHLIGHT LOGIC ---------------- */
-    if (searchTerm) {
-
+    // Simple highlight (fast version)
+    if (highlight) {
         const textContent = await page.getTextContent();
-        const normSearch = searchTerm.replace(/\s+/g, '');
-
-        let fullText = '';
-        let map = [];
+        const norm = highlight.replace(/\s+/g, '');
 
         textContent.items.forEach(item => {
             const cleaned = item.str.replace(/\s+/g, '');
 
-            for (let i = 0; i < cleaned.length; i++) {
-                map.push({ char: cleaned[i], item });
-                fullText += cleaned[i];
-            }
-        });
-
-        let index = fullText.indexOf(normSearch);
-
-        while (index !== -1) {
-
-            for (let i = index; i < index + normSearch.length; i++) {
-                const item = map[i].item;
-
+            if (cleaned.includes(norm)) {
                 const tx = pdfjsLib.Util.transform(
                     scaledViewport.transform,
                     item.transform
@@ -148,76 +139,57 @@ async function renderPage(num, searchTerm = null) {
                 const x = tx[4];
                 const y = tx[5];
 
-                const width = item.width * scale;
-                const height = item.height * scale;
-
                 ctx.fillStyle = "rgba(255, 255, 0, 0.35)";
-                ctx.fillRect(x, y - height, width, height);
-
-                currentHighlights.push({ x, y });
+                ctx.fillRect(
+                    x,
+                    y - item.height * scale,
+                    item.width * scale,
+                    item.height * scale
+                );
             }
-
-            index = fullText.indexOf(normSearch, index + 1);
-        }
+        });
     }
 
     document.getElementById('status').innerText = "Viewing page " + num;
 }
 
-/* ---------------- SEARCH ---------------- */
-async function searchPDF() {
-
-    if (scanLock) return;
-    scanLock = true;
-
+/* ---------------- INSTANT SEARCH ---------------- */
+function searchSKU() {
     const input = document.getElementById('skuInput');
     const sku = input.value.trim().replace(/\s+/g, '');
 
-    if (!sku) {
-        scanLock = false;
-        return;
-    }
+    if (!sku) return;
 
     document.getElementById('status').innerText = "Searching...";
 
-    for (let i = 1; i <= pdfDoc.numPages; i++) {
-        const page = await pdfDoc.getPage(i);
-        const content = await page.getTextContent();
+    // 🔥 INSTANT LOOKUP (no loops through pages)
+    for (const page in skuIndex) {
+        if (skuIndex[page].includes(sku)) {
 
-        let text = content.items.map(item => item.str).join(' ');
-        text = text.replace(/\s+/g, '');
+            renderPage(parseInt(page), sku);
 
-        if (text.includes(sku)) {
+            document.getElementById('status').innerText =
+                "Found on page " + page;
 
-            await renderPage(i, sku);
-
-            document.getElementById('status').innerText = "Found on page " + i;
-
-            // RESET FOR NEXT SCAN
             input.value = '';
             input.focus();
-            scanLock = false;
             return;
         }
     }
 
     document.getElementById('status').innerText = "SKU not found.";
-
-    // RESET INPUT EVEN IF NOT FOUND
     input.value = '';
     input.focus();
-    scanLock = false;
 }
 
-/* ---------------- ENTER KEY ---------------- */
+/* ---------------- ENTER HANDLING ---------------- */
 document.getElementById('skuInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
-        e.preventDefault();
-        searchPDF();
+        searchSKU();
     }
 });
 
-/* ---------------- AUTO FOCUS (scanner-friendly) ---------------- */
+/* ---------------- AUTO FOCUS (scanner mode) ---------------- */
 setInterval(() => {
     const input = document.getElementById('skuInput');
     if (document.activeElement !== input) {
