@@ -50,6 +50,28 @@ h2 { margin: 10px 0; }
     max-height: 100%;
     background: white;
 }
+
+/* 🔴 NOT FOUND OVERLAY */
+#notFoundOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+
+    background: rgba(0,0,0,0.85);
+    color: white;
+
+    display: none;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 60px;
+    font-weight: bold;
+    letter-spacing: 2px;
+
+    z-index: 9999;
+}
 </style>
 </head>
 
@@ -68,15 +90,27 @@ h2 { margin: 10px 0; }
     <canvas id="pdfCanvas"></canvas>
 </div>
 
+<!-- 🔴 NOT FOUND SCREEN -->
+<div id="notFoundOverlay">SKU NOT FOUND</div>
+
 <script>
 const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
 let skuIndex = {};
 
-/* ---------------- NORMALIZER (IMPORTANT FIX) ---------------- */
+/* ---------------- NORMALIZER ---------------- */
 function normalize(text) {
-    return text.replace(/[\s\-]+/g, ''); // removes spaces + dashes
+    return text.replace(/[\s\-]+/g, '');
+}
+
+/* ---------------- OVERLAY CONTROLS ---------------- */
+function showNotFound() {
+    document.getElementById('notFoundOverlay').style.display = 'flex';
+}
+
+function hideNotFound() {
+    document.getElementById('notFoundOverlay').style.display = 'none';
 }
 
 /* ---------------- LOAD + BUILD INDEX ---------------- */
@@ -90,7 +124,7 @@ pdfjsLib.getDocument(url).promise.then(async pdf => {
         const content = await page.getTextContent();
 
         let text = content.items.map(item => item.str).join('');
-        skuIndex[i] = normalize(text); // ✅ consistent normalization
+        skuIndex[i] = normalize(text);
     }
 
     document.getElementById('status').innerText = "Ready to scan.";
@@ -124,7 +158,7 @@ async function renderPage(num, highlight = null) {
         viewport: scaledViewport
     }).promise;
 
-    /* ---------------- FIXED HIGHLIGHT (DASH SAFE) ---------------- */
+    /* ---------------- HIGHLIGHT ---------------- */
     if (highlight) {
 
         const textContent = await page.getTextContent();
@@ -133,7 +167,6 @@ async function renderPage(num, highlight = null) {
         let fullText = '';
         let map = [];
 
-        // rebuild character map (handles split PDF text like 11- / 1698 / -2)
         textContent.items.forEach(item => {
             const cleaned = normalize(item.str);
 
@@ -174,7 +207,7 @@ async function renderPage(num, highlight = null) {
     document.getElementById('status').innerText = "Viewing page " + num;
 }
 
-/* ---------------- INSTANT SEARCH ---------------- */
+/* ---------------- SEARCH ---------------- */
 function searchSKU() {
     const input = document.getElementById('skuInput');
     const sku = normalize(input.value);
@@ -182,6 +215,7 @@ function searchSKU() {
     if (!sku) return;
 
     document.getElementById('status').innerText = "Searching...";
+    hideNotFound();
 
     for (const page in skuIndex) {
         if (skuIndex[page].includes(sku)) {
@@ -191,6 +225,8 @@ function searchSKU() {
             document.getElementById('status').innerText =
                 "Found on page " + page;
 
+            hideNotFound();
+
             input.value = '';
             input.focus();
             return;
@@ -198,11 +234,13 @@ function searchSKU() {
     }
 
     document.getElementById('status').innerText = "SKU not found.";
+    showNotFound();
+
     input.value = '';
     input.focus();
 }
 
-/* ---------------- ENTER ---------------- */
+/* ---------------- ENTER KEY ---------------- */
 document.getElementById('skuInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         searchSKU();
