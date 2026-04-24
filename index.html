@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -13,14 +13,21 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 </script>
 
 <style>
-body {
+html, body {
+    height: 100%;
+    margin: 0;
+    overflow: hidden; /* removes page scroll */
     font-family: Arial, sans-serif;
-    text-align: center;
     background: #f4f4f4;
+    text-align: center;
+}
+
+h2 {
+    margin: 10px 0;
 }
 
 #controls {
-    margin: 15px;
+    margin: 10px;
 }
 
 #skuInput {
@@ -29,15 +36,23 @@ body {
     width: 300px;
 }
 
-#pdfCanvas {
-    border: 1px solid #333;
-    margin-top: 10px;
-    max-width: 95%;
+#status {
+    font-weight: bold;
+    margin: 5px 0;
 }
 
-#status {
-    margin-top: 10px;
-    font-weight: bold;
+#viewer {
+    height: calc(100vh - 140px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#pdfCanvas {
+    border: 1px solid #333;
+    max-width: 95vw;
+    max-height: 100%;
+    background: white;
 }
 </style>
 </head>
@@ -53,14 +68,15 @@ body {
 
 <div id="status">Loading PDF...</div>
 
-<canvas id="pdfCanvas"></canvas>
+<div id="viewer">
+    <canvas id="pdfCanvas"></canvas>
+</div>
 
 <script>
 const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
 let currentPage = 1;
-let isSearching = false;
 
 // Load PDF
 pdfjsLib.getDocument(url).promise.then(pdf => {
@@ -72,7 +88,7 @@ pdfjsLib.getDocument(url).promise.then(pdf => {
     console.error(err);
 });
 
-// Render page
+// Render page (FULL FIT: width + height)
 function renderPage(num) {
     pdfDoc.getPage(num).then(page => {
         const canvas = document.getElementById('pdfCanvas');
@@ -80,14 +96,21 @@ function renderPage(num) {
 
         const viewport = page.getViewport({ scale: 1 });
 
-        // Fit to screen width
         const containerWidth = window.innerWidth * 0.95;
-        const scale = containerWidth / viewport.width;
+        const containerHeight = window.innerHeight * 0.75;
+
+        const scaleW = containerWidth / viewport.width;
+        const scaleH = containerHeight / viewport.height;
+
+        const scale = Math.min(scaleW, scaleH);
 
         const scaledViewport = page.getViewport({ scale });
 
         canvas.width = scaledViewport.width;
         canvas.height = scaledViewport.height;
+
+        canvas.style.width = scaledViewport.width + "px";
+        canvas.style.height = scaledViewport.height + "px";
 
         page.render({
             canvasContext: ctx,
@@ -109,9 +132,7 @@ async function searchPDF() {
         const page = await pdfDoc.getPage(i);
         const content = await page.getTextContent();
 
-        let text = content.items.map(item => item.str).join('');
-
-        // normalize BOTH sides (critical fix)
+        let text = content.items.map(item => item.str).join(' ');
         text = text.replace(/\s+/g, '');
 
         if (text.includes(sku)) {
@@ -124,7 +145,7 @@ async function searchPDF() {
     document.getElementById('status').innerText = "SKU not found.";
 }
 
-// Trigger search when scanner presses Enter
+// Enter key triggers search
 document.getElementById('skuInput').addEventListener('keypress', function(e) {
     if (e.key === 'Enter') {
         searchPDF();
