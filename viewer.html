@@ -7,6 +7,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+</script>
+
 <style>
 body {
     font-family: Arial, sans-serif;
@@ -51,7 +56,7 @@ body {
 <canvas id="pdfCanvas"></canvas>
 
 <script>
-const url = './Logo-Reference-Book.pdf';
+const url = 'Logo-Reference-Book.pdf';
 
 let pdfDoc = null;
 let currentPage = 1;
